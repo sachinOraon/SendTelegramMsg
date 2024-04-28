@@ -43,6 +43,7 @@ def setup_config() -> None:
             if not all([TG_API_HASH, TG_API_ID, TARGET_CHAT_ID, USER_SESSION_STRING]):
                 logger.error("Failed to load config values")
                 raise KeyError
+            start_pyrogram()
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, KeyError, JSONDecodeError):
             logger.error("Failed to setup config")
     else:
@@ -90,7 +91,6 @@ def send_message(msg: str, response: dict):
 
 
 setup_config()
-start_pyrogram()
 
 
 @flask_app.get("/get/<file_name>/<file_id>")
@@ -112,8 +112,8 @@ def health_check():
         if not all([TG_API_ID, TG_API_HASH, TARGET_CHAT_ID, USER_SESSION_STRING, pyro_app]) or not pyro_app.me.username:
             return jsonify({"status": "missing required config"}), HTTPStatus.INTERNAL_SERVER_ERROR
         else:
-            return (jsonify({"status": "ok", "userName": pyro_app.me.username, "botStatus": pyro_app.me.status.name}),
-                    HTTPStatus.OK)
+            return (jsonify({"status": "ok", "userName": pyro_app.me.username, "botStatus": pyro_app.me.status.name,
+                             "device": pyro_app.device_model, "version": pyro_app.system_version}), HTTPStatus.OK)
     except errors.RPCError as e:
         return (jsonify({"status": "pyrogram session not initialized", "error": e.MESSAGE}),
                 HTTPStatus.INTERNAL_SERVER_ERROR)

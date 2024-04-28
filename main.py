@@ -3,7 +3,6 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from http import HTTPStatus
 from typing import Optional
-from sys import exit as _exit
 from dotenv import load_dotenv
 from json import JSONDecodeError
 from time import sleep
@@ -46,10 +45,8 @@ def setup_config() -> None:
                 raise KeyError
         except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError, KeyError, JSONDecodeError):
             logger.error("Failed to setup config")
-            _exit(os.EX_CONFIG)
     else:
         logger.error("CONFIG_FILE_URL is not present")
-        _exit(os.EX_UNAVAILABLE)
 
 
 def start_pyrogram() -> None:
@@ -70,10 +67,8 @@ def start_pyrogram() -> None:
         logger.info(f"Session started, username: {pyro_app.me.username}")
     except ConnectionError:
         logger.warning("Pyrogram session already started")
-        _exit(os.EX_NOTFOUND)
     except errors.RPCError as err:
         logger.error(f"Failed to start pyrogram session, error: {err.MESSAGE}")
-        _exit(os.EX_UNAVAILABLE)
 
 
 def send_message(msg: str, response: dict):
@@ -110,3 +105,15 @@ def request_file(file_name: str, file_id: str):
     get_cmd_txt = f"/get {file_id}"
     return send_message(get_cmd_txt, response)
 
+
+@flask_app.get("/status")
+def health_check():
+    try:
+        if not all([TG_API_ID, TG_API_HASH, TARGET_CHAT_ID, USER_SESSION_STRING, pyro_app]) or not pyro_app.me.username:
+            return jsonify({"status": "missing required config"}), HTTPStatus.INTERNAL_SERVER_ERROR
+        else:
+            return (jsonify({"status": "ok", "userName": pyro_app.me.username, "botStatus": pyro_app.me.status.name}),
+                    HTTPStatus.OK)
+    except errors.RPCError as e:
+        return (jsonify({"status": "pyrogram session not initialized", "error": e.MESSAGE}),
+                HTTPStatus.INTERNAL_SERVER_ERROR)

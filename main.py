@@ -97,7 +97,7 @@ setup_config()
 def request_file(file_name: str, file_id: str):
     logger.info(f"Received request to fetch file: {file_name} id: {file_id}")
     response = {"fileName": file_name, "fileId": file_id}
-    if not pyro_app:
+    if not pyro_app.me:
         err_msg = "Pyrogram session is not initialized"
         logger.error(err_msg)
         response["error"] = err_msg
@@ -109,7 +109,8 @@ def request_file(file_name: str, file_id: str):
 @flask_app.get("/status")
 def health_check():
     try:
-        if not all([TG_API_ID, TG_API_HASH, TARGET_CHAT_ID, USER_SESSION_STRING, pyro_app]) or not pyro_app.me.username:
+        if (not all([TG_API_ID, TG_API_HASH, TARGET_CHAT_ID, USER_SESSION_STRING, pyro_app.me]) or
+                not pyro_app.me.username):
             return jsonify({"status": "missing required config"}), HTTPStatus.INTERNAL_SERVER_ERROR
         else:
             return (jsonify({"status": "ok", "userName": pyro_app.me.username, "botStatus": pyro_app.me.status.name,

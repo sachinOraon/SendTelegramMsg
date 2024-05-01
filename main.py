@@ -5,7 +5,7 @@ from http import HTTPStatus
 from typing import Optional
 from dotenv import load_dotenv
 from json import JSONDecodeError
-from time import sleep
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type, RetryError
 import requests
 import logging
 import os
@@ -72,13 +72,14 @@ def start_pyrogram() -> None:
         logger.error(f"Failed to start pyrogram session, error: {err.MESSAGE}")
 
 
+@retry(wait=wait_exponential(multiplier=2, min=3, max=6), stop=stop_after_attempt(3),
+       retry=(retry_if_exception_type(errors.FloodWait)))
 def send_message(msg: str, response: dict):
     try:
         pyro_app.send_message(chat_id=TARGET_CHAT_ID, text=msg)
     except errors.FloodWait as f:
         logger.warning(f"Retrying sending message [{f.MESSAGE}]")
-        sleep(f.value * 1.2)
-        return send_message(msg, response)
+        raise f
     except errors.RPCError as e:
         err_msg = f"Failed to send message [{e.MESSAGE}]"
         logger.error(err_msg)
@@ -103,7 +104,13 @@ def request_file(file_name: str, file_id: str):
         response["error"] = err_msg
         return jsonify(response), HTTPStatus.INTERNAL_SERVER_ERROR
     get_cmd_txt = f"/get {file_id}"
-    return send_message(get_cmd_txt, response)
+    try:
+        return send_message(get_cmd_txt, response)
+    except RetryError as err:
+        err_msg = f"Unable to send message even after retrying for {err.last_attempt.attempt_number} attempts"
+        response["error"] = err_msg
+        logger.error(err_msg)
+        return jsonify(response), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @flask_app.get("/status")

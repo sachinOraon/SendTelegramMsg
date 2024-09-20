@@ -3,5 +3,5 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install --assume-ye
 COPY . /usr/src/app
 WORKDIR /usr/src/app
 RUN ["pip", "install", "--no-cache-dir", "-r", "requirements.txt"]
-EXPOSE 8000
-CMD ["gunicorn", "--bind" , ":8000", "--workers", "1", "main:flask_app"]
+EXPOSE 8080
+CMD ["python3", "main.py"]

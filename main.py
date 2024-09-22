@@ -112,6 +112,8 @@ async def restart_bot() -> bool:
                 await pyro_app.stop(block=True)
         except ConnectionError:
             logger.warning("Bot is already stopped")
+        except errors.TakeoutInvalid as e:
+            logger.error(e.MESSAGE)
         return await start_pyrogram()
     return False
 

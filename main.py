@@ -18,6 +18,7 @@ web_app = web.Application(middlewares=[
 ])
 routes = web.RouteTableDef()
 loop = asyncio.get_event_loop()
+lock = asyncio.Lock()
 pyro_app: Optional[Client] = None
 server: Optional[web.AppRunner] = None
 CONFIG_FILE_URL = os.getenv("CONFIG_FILE_URL")
@@ -61,28 +62,29 @@ async def setup_config():
         exit(os.EX_CONFIG)
 
 
-async def start_pyrogram():
+async def start_pyrogram() -> bool:
     global pyro_app
     logger.info("Starting pyrogram session")
     try:
-        pyro_app = Client(
-            name="requestForwarder",
-            api_id=TG_API_ID,
-            api_hash=TG_API_HASH,
-            session_string=USER_SESSION_STRING,
-            no_updates=True,
-            parse_mode=enums.ParseMode.HTML,
-            in_memory=True,
-            takeout=True,
-            max_concurrent_transmissions=5)
-        await pyro_app.start()
-        logger.info(f"Session started, username: {pyro_app.me.username}")
+        async with lock:
+            pyro_app = Client(
+                name="requestForwarder",
+                api_id=TG_API_ID,
+                api_hash=TG_API_HASH,
+                session_string=USER_SESSION_STRING,
+                no_updates=True,
+                parse_mode=enums.ParseMode.HTML,
+                in_memory=True,
+                takeout=True,
+                max_concurrent_transmissions=5)
+            await pyro_app.start()
+            logger.info(f"Session started, username: {pyro_app.me.username}")
+            return True
     except ConnectionError:
         logger.warning("Pyrogram session already started")
-        exit(os.EX_UNAVAILABLE)
     except errors.RPCError as e:
         logger.error(f"Failed to start pyrogram session, error: {e.MESSAGE}")
-        exit(os.EX_UNAVAILABLE)
+    return False
 
 
 async def start_web_server():
@@ -102,6 +104,18 @@ async def start_services():
     await idle()
 
 
+async def restart_bot() -> bool:
+    if pyro_app:
+        logger.info("Stopping bot session")
+        try:
+            async with lock:
+                await pyro_app.stop(block=True)
+        except ConnectionError:
+            logger.warning("Bot is already stopped")
+        return await start_pyrogram()
+    return False
+
+
 @retry(wait=wait_exponential(multiplier=2, min=3, max=6), stop=stop_after_attempt(3),
        retry=(retry_if_exception_type(errors.FloodWait)))
 async def send_message(msg: str, response: dict):
@@ -110,6 +124,12 @@ async def send_message(msg: str, response: dict):
     except errors.FloodWait as f:
         logger.warning(f"Retrying sending message [{f.MESSAGE}]")
         raise f
+    except errors.TakeoutInvalid as e:
+        logger.error(f"{e.MESSAGE}...Restarting bot session")
+        if await restart_bot() is True:
+            raise errors.FloodWait
+        else:
+            return web.json_response(data=response, status=HTTPStatus.INTERNAL_SERVER_ERROR.value)
     except errors.RPCError as e:
         err_msg = f"Failed to send message [{e.MESSAGE}]"
         logger.error(err_msg)
